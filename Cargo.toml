@@ -1,0 +1,11 @@
+[package]
+name = "tile_test"
+version = "0.1.0"
+authors = ["simon <simon.d.cooper@hotmail.co.uk>"]
+edition = "2018"
+
+[dependencies]
+vulkano = "0.13"
+vulkano-shaders = "0.13"
+vulkano-win = "0.13"
+winit = "0.19"
