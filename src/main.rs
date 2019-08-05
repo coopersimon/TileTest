@@ -37,10 +37,10 @@ use winit::{
 
 use std::sync::Arc;
 
-//mod imagegen;
+mod imagegen;
 
 #[derive(Default, Copy, Clone)]
-struct Vertex {
+pub struct Vertex {
     position: [f32; 2],
     tex_coord: [f32; 2]
 }
@@ -52,7 +52,7 @@ mod vs {
         #version 450
 
         layout(location = 0) in vec2 position;
-        layout(location = 1) in vec2 texCoord;
+        layout(location = 1) in vec2 tex_coord;
         //layout(location = 2) in int paletteIndex;
 
         layout(location = 0) out vec2 texCoordOut;
@@ -60,7 +60,7 @@ mod vs {
 
         void main() {
             gl_Position = vec4(position, 0.0, 1.0);
-            texCoordOut = texCoord;
+            texCoordOut = tex_coord;
             //paletteIndexOut = paletteIndex;
         }"#
     }
@@ -81,7 +81,7 @@ mod fs {
             //int texel = texture(texSampler, texCoord);
             //float pixel = palette[texel];
             //outColor = vec4(vec3(pixel), 1.0);
-            outColor = vec4(1.0, 0.0, 0.0, 0.0);
+            outColor = vec4(texCoord.x, texCoord.y, 0.0, 0.0);
         }"#
     }
 }
@@ -137,13 +137,17 @@ fn main() {
             .expect("Failed to create swapchain")
     };
 
-    // Make vertices (triangle).
+    // Make vertices (4 squares.)
     let vertex_buffer = {
-        let vertex1 = Vertex{ position: [-0.5, 0.5], tex_coord: [0.0, 0.0] };
-        let vertex2 = Vertex{ position: [0.5, 0.5], tex_coord: [0.0, 0.0] };
-        let vertex3 = Vertex{ position: [0.0, -0.5], tex_coord: [0.0, 0.0] };
+        // Triangle list with grid of 4 squares...
+        // 1 2 3
+        // 4 5 6
+        // 7 8 9
+        // ...where 1-2-4-5 is the top-left square.
+        let vertices = imagegen::generate_vertices(2, 2);
+
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(),
-            vec![vertex1, vertex2, vertex3].into_iter()).unwrap()
+            vertices.into_iter()).unwrap()
     };
 
     // Make the render pass to insert into the command queue.
