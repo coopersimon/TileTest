@@ -60,7 +60,7 @@ pub fn generate_tile_tex(atlas: &mut [u8], x: usize, y: usize) {
 // Sets the tex coords for a tile.
 pub fn set_tile(vertex_grid: &mut VertexGrid, tile_x: usize, tile_y: usize, tex_x: usize, tex_y: usize) {
     let y_offset = tile_y * vertex_grid.y_size * 6;
-    let index = y_offset + (tile_x * vertex_grid.x_size);
+    let index = y_offset + (tile_x * 6);
 
     let atlas_size = ATLAS_SIZE as f32;
     let top_left = (tex_x as f32 / atlas_size, tex_y as f32 / atlas_size);

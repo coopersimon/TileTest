@@ -147,6 +147,7 @@ fn main() {
         let mut vertex_grid = imagegen::generate_vertices(4, 4);
 
         imagegen::set_tile(&mut vertex_grid, 0, 0, 0, 0);
+        imagegen::set_tile(&mut vertex_grid, 1, 0, 1, 1);
 
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(),
             vertex_grid.vertices.into_iter()).unwrap()
