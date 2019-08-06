@@ -75,6 +75,10 @@ mod fs {
         layout(location = 0) in vec2 texCoord;
         //layout(location = 1) in int paletteIndex;
 
+        //layout(set = 0, binding = 0) buffer Data {
+        //    uint data[];
+        //} atlas;
+
         layout(location = 0) out vec4 outColor;
 
         void main() {
@@ -139,15 +143,13 @@ fn main() {
 
     // Make vertices (4 squares.)
     let vertex_buffer = {
-        // Triangle list with grid of 4 squares...
-        // 1 2 3
-        // 4 5 6
-        // 7 8 9
-        // ...where 1-2-4-5 is the top-left square.
-        let vertices = imagegen::generate_vertices(2, 2);
+        // Triangle list with grid of 16 squares (4x4)
+        let mut vertex_grid = imagegen::generate_vertices(4, 4);
+
+        imagegen::set_tile(&mut vertex_grid, 0, 0, 0, 0);
 
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(),
-            vertices.into_iter()).unwrap()
+            vertex_grid.vertices.into_iter()).unwrap()
     };
 
     // Make the render pass to insert into the command queue.
@@ -170,7 +172,7 @@ fn main() {
     let mut dynamic_state = DynamicState{
         viewports: Some(vec![Viewport{
             origin: [0.0, 0.0],
-            dimensions: [1024.0, 1024.0],
+            dimensions: [500.0, 500.0],
             depth_range: 0.0 .. 1.0,
         }]),
         .. DynamicState::none()
