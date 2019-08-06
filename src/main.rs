@@ -6,7 +6,7 @@ use vulkano::{
         Device, DeviceExtensions
     },
     buffer::{
-        BufferUsage, CpuAccessibleBuffer, CpuBufferPool
+        BufferUsage, CpuBufferPool
     },
     framebuffer::{
         Framebuffer, Subpass, FramebufferAbstract
@@ -22,7 +22,8 @@ use vulkano::{
     },
     sync::{
         now, GpuFuture
-    }
+    },
+    descriptor::descriptor_set::PersistentDescriptorSet
 };
 
 use vulkano_win::VkSurfaceBuild;
@@ -79,9 +80,9 @@ mod fs {
         layout(location = 0) in vec2 texCoord;
         //layout(location = 1) in int paletteIndex;
 
-        //layout(set = 0, binding = 0) buffer Data {
-        //    uint data[];
-        //} atlas;
+        layout(set = 0, binding = 0) buffer Data {
+            uint data[];
+        } atlas;
 
         layout(location = 0) out vec4 outColor;
 
@@ -89,6 +90,7 @@ mod fs {
             //int texel = texture(texSampler, texCoord);
             //float pixel = palette[texel];
             //outColor = vec4(vec3(pixel), 1.0);
+            uint data = atlas.data[0];
             outColor = vec4(texCoord.x, texCoord.y, 0.0, 0.0);
         }"#
     }
@@ -174,6 +176,9 @@ fn main() {
         texture_atlas
     };
 
+    // Make buffer pool for texture atlas.
+    let texture_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::all());
+
     // Make the render pass to insert into the command queue.
     let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
         attachments: {
@@ -247,11 +252,20 @@ fn main() {
         // TODO: only re-create the buffer when the data has changed.
         // TODO: investigate reducing data copies.
         let vertex_buffer = vertex_buffer_pool.chunk(vertex_grid.vertices.iter().cloned()).unwrap();
+
+        // Make buffer with current texture.
+        let texture_buffer = texture_buffer_pool.chunk(texture_atlas.textures.iter().cloned()).unwrap();
+
+        // Make descriptor set to bind texture atlas.
+        let set = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
+            .add_buffer(texture_buffer).unwrap()
+            .build().unwrap()
+        );
         
         // Make and submit command buffer using pipeline and current framebuffer.
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue_family).unwrap()
             .begin_render_pass(framebuffers[image_num].clone(), false, vec![[0.0, 0.0, 1.0, 1.0].into()]).unwrap()
-            .draw(pipeline.clone(), &dynamic_state, vertex_buffer.clone(), (), ()).unwrap()
+            .draw(pipeline.clone(), &dynamic_state, vertex_buffer, set, ()).unwrap()
             .end_render_pass().unwrap()
             .build().unwrap();
 

@@ -37,7 +37,7 @@ use std::sync::Arc;*/
 
 // Atlas of all tile textures. Must be square.
 pub struct TextureAtlas {
-    textures: Vec<u32>,
+    pub textures: Vec<u32>,
     atlas_size: usize,
     tex_size: usize,
     texel_size: usize
@@ -80,7 +80,7 @@ impl TextureAtlas {
                 let mask = make_mask(word_offset, self.texel_size);
                 // Mask the relevant bits.
                 self.textures[word] &= !mask;
-                self.textures[word] |= mask & 0; // rand
+                self.textures[word] |= mask & rand::random::<u32>(); // rand
             }
         }
     }
