@@ -1,5 +1,5 @@
 // Generate a tile in an image.
-use super::Vertex;
+/*use super::Vertex;
 
 use vulkano::{
     device::Device,
@@ -13,16 +13,8 @@ use vulkano::{
     }
 };
 
-use std::sync::Arc;
+use std::sync::Arc;*/
 
-const TILE_SIZE: usize = 8;     // In pixels
-const ATLAS_SIZE: usize = 2;    // In tiles
-
-pub struct VertexGrid {
-    pub vertices: Vec<Vertex>,
-    x_size: usize,
-    y_size: usize
-}
 
 /*pub fn new_atlas(device: &Arc<Device>) -> (Arc<AttachmentImage>, Arc<Sampler>) {
     let atlas = AttachmentImage::sampled_input_attachment(
@@ -43,67 +35,62 @@ pub struct VertexGrid {
     (atlas, sampler)
 }*/
 
-// Generate a new tile on the CPU
-pub fn generate_tile_tex(atlas: &mut [u8], x: usize, y: usize) {
-    let base_x = x * TILE_SIZE;
-    let base_y = y * TILE_SIZE;
+// Atlas of all tile textures. Must be square.
+pub struct TextureAtlas {
+    textures: Vec<u32>,
+    atlas_size: usize,
+    tex_size: usize,
+    texel_size: usize
+}
 
-    for y in base_y..(base_y + TILE_SIZE) {
-        let y_offset = y * ATLAS_SIZE;
-        let xy_offset = y_offset + base_x;
-        for i in xy_offset..(xy_offset + TILE_SIZE) {
-            atlas[i] = 0; // rand
+impl TextureAtlas {
+    // Atlas size: size of the atlas in textures.
+    // Tex size: size of a texture in texels.
+    // Texel size: size of a texel in bits (keep this to a power of 2)
+    pub fn new(atlas_size: usize, tex_size: usize, texel_size: usize) -> Self {
+        assert!(texel_size & (texel_size - 1) == 0);    // Texel size must be a power of 2
+
+        let width_texels = atlas_size * tex_size;       // Width and height must be the same.
+        let area_texels = width_texels * width_texels;
+        let area_bytes = (area_texels * texel_size) / 8;
+
+        TextureAtlas {
+            textures: vec![0; area_bytes / 4],
+            atlas_size: atlas_size,
+            tex_size: tex_size,
+            texel_size: texel_size
+        }
+    }
+
+    // Generate a new tile texture in the atlas.
+    pub fn generate_tile_tex(&mut self, x: usize, y: usize) {
+        let texels_per_word = 32 / self.texel_size;
+        let base_x = x * self.tex_size;
+        let base_y = y * self.tex_size;
+
+        for y in base_y..(base_y + self.tex_size) {
+            let y_offset = y * self.atlas_size * self.tex_size;
+            let xy_offset = y_offset + base_x;
+            // i is the texel number.
+            for i in xy_offset..(xy_offset + self.tex_size) {
+                assert!(i < (self.atlas_size * self.tex_size).pow(2));
+                let word = i / texels_per_word;
+                assert!(word < self.textures.len());
+                let word_offset = i % texels_per_word;
+                let mask = make_mask(word_offset, self.texel_size);
+                // Mask the relevant bits.
+                self.textures[word] &= !mask;
+                self.textures[word] |= mask & 0; // rand
+            }
         }
     }
 }
 
-// Sets the tex coords for a tile.
-pub fn set_tile(vertex_grid: &mut VertexGrid, tile_x: usize, tile_y: usize, tex_x: usize, tex_y: usize) {
-    let y_offset = tile_y * vertex_grid.y_size * 6;
-    let index = y_offset + (tile_x * 6);
-
-    let atlas_size = ATLAS_SIZE as f32;
-    let top_left = (tex_x as f32 / atlas_size, tex_y as f32 / atlas_size);
-    let bottom_right = (top_left.0 + 1.0 / atlas_size, top_left.1 + 1.0 / atlas_size);
-
-    vertex_grid.vertices[index].tex_coord = [top_left.0, top_left.1];
-    vertex_grid.vertices[index + 1].tex_coord = [top_left.0, bottom_right.1];
-    vertex_grid.vertices[index + 2].tex_coord = [bottom_right.0, top_left.1];
-    vertex_grid.vertices[index + 3].tex_coord = [top_left.0, bottom_right.1];
-    vertex_grid.vertices[index + 4].tex_coord = [bottom_right.0, top_left.1];
-    vertex_grid.vertices[index + 5].tex_coord = [bottom_right.0, bottom_right.1];
-}
-
-// Generate a list of vertices for a specified grid size.
-pub fn generate_vertices(x_size: usize, y_size: usize) -> VertexGrid {
-    let mut grid = VertexGrid {
-        vertices: Vec::new(),
-        x_size: x_size,
-        y_size: y_size
-    };
-
-    let x_frac = 2.0 / x_size as f32;
-    let y_frac = 2.0 / y_size as f32;
-    let mut lo_y = -1.0;
-    let mut hi_y = lo_y + y_frac;
-
-    for _ in 0..y_size {
-        let mut lo_x = -1.0;
-        let mut hi_x = lo_x + x_frac;
-        for _ in 0..x_size {
-            grid.vertices.push(Vertex{ position: [lo_x, lo_y], tex_coord: [0.0, 0.0] });
-            grid.vertices.push(Vertex{ position: [lo_x, hi_y], tex_coord: [0.0, 1.0] });
-            grid.vertices.push(Vertex{ position: [hi_x, lo_y], tex_coord: [1.0, 0.0] });
-            grid.vertices.push(Vertex{ position: [lo_x, hi_y], tex_coord: [0.0, 1.0] });
-            grid.vertices.push(Vertex{ position: [hi_x, lo_y], tex_coord: [1.0, 0.0] });
-            grid.vertices.push(Vertex{ position: [hi_x, hi_y], tex_coord: [1.0, 1.0] });
-
-            lo_x = hi_x;
-            hi_x += x_frac;
-        }
-        lo_y = hi_y;
-        hi_y += y_frac;
+// Helper fns:
+fn make_mask(offset: usize, bit_length: usize) -> u32 {
+    let mut mask = 0;
+    for i in offset..(offset + bit_length) {
+        mask |= 1 << i;
     }
-
-    grid
+    mask
 }

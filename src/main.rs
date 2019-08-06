@@ -6,7 +6,7 @@ use vulkano::{
         Device, DeviceExtensions
     },
     buffer::{
-        BufferUsage, CpuAccessibleBuffer
+        BufferUsage, CpuAccessibleBuffer, CpuBufferPool
     },
     framebuffer::{
         Framebuffer, Subpass, FramebufferAbstract
@@ -38,6 +38,10 @@ use winit::{
 use std::sync::Arc;
 
 mod imagegen;
+mod vertexgrid;
+
+const TILE_SIZE: usize = 8;     // In pixels
+const ATLAS_SIZE: usize = 2;    // In tiles
 
 #[derive(Default, Copy, Clone)]
 pub struct Vertex {
@@ -142,15 +146,32 @@ fn main() {
     };
 
     // Make vertices (4 squares.)
-    let vertex_buffer = {
-        // Triangle list with grid of 16 squares (4x4)
-        let mut vertex_grid = imagegen::generate_vertices(4, 4);
+    let vertex_grid = {
+        // Triangle list with grid of 16 squares (4x4), with atlas size 2x2.
+        let mut vertex_grid = vertexgrid::VertexGrid::new(4, 4, ATLAS_SIZE);
 
-        imagegen::set_tile(&mut vertex_grid, 0, 0, 0, 0);
-        imagegen::set_tile(&mut vertex_grid, 1, 0, 1, 1);
+        vertex_grid.set_tile_texture(0, 0, 0, 0);   // Set tile at 0,0 to texture at 0,0
+        vertex_grid.set_tile_texture(1, 0, 1, 1);   // Set tile at 1,0 to texture at 1,1
 
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(),
-            vertex_grid.vertices.into_iter()).unwrap()
+        /*CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(),
+            vertex_grid.get_vertices().into_iter()).unwrap()*/
+        vertex_grid
+    };
+
+    // Make buffer pool for uploading vertices.
+    let vertex_buffer_pool = CpuBufferPool::vertex_buffer(device.clone());
+
+    // Make texture atlas.
+    // 2x2 textures, textures of size 8x8, texel of size 2 bits.
+    let texture_atlas = {
+        let mut texture_atlas = imagegen::TextureAtlas::new(ATLAS_SIZE, TILE_SIZE, 2);
+
+        texture_atlas.generate_tile_tex(0, 0);
+        texture_atlas.generate_tile_tex(1, 0);
+        texture_atlas.generate_tile_tex(0, 1);
+        texture_atlas.generate_tile_tex(1, 1);
+
+        texture_atlas
     };
 
     // Make the render pass to insert into the command queue.
@@ -221,6 +242,11 @@ fn main() {
         // Get current framebuffer index from the swapchain.
         let (image_num, acquire_future) = acquire_next_image(swapchain.clone(), None)
             .expect("Didn't get next image");
+
+        // Make vertex buffer with current tex coords.
+        // TODO: only re-create the buffer when the data has changed.
+        // TODO: investigate reducing data copies.
+        let vertex_buffer = vertex_buffer_pool.chunk(vertex_grid.vertices.iter().cloned()).unwrap();
         
         // Make and submit command buffer using pipeline and current framebuffer.
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue_family).unwrap()
