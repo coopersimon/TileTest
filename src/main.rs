@@ -6,7 +6,9 @@ use vulkano::{
         Device, DeviceExtensions
     },
     buffer::{
-        CpuBufferPool
+        BufferUsage,
+        CpuBufferPool,
+        immutable::ImmutableBuffer
     },
     framebuffer::{
         Framebuffer, Subpass, FramebufferAbstract
@@ -42,6 +44,11 @@ use winit::{
     WindowBuilder
 };
 
+use cgmath::{
+    Matrix4,
+    Vector4
+};
+
 use std::sync::Arc;
 
 mod imagegen;
@@ -49,6 +56,11 @@ mod vertexgrid;
 
 const TILE_SIZE: usize = 8;     // In pixels
 const ATLAS_SIZE: usize = 2;    // In tiles
+
+#[derive(Copy, Clone)]
+struct PaletteUniformBufferObject {
+    _colours: [Matrix4<f32>; 4]
+}
 
 #[derive(Default, Copy, Clone)]
 pub struct Vertex {
@@ -89,39 +101,15 @@ mod fs {
 
         layout(set = 0, binding = 0) uniform usampler2D atlas;
 
-        layout(location = 0) out vec4 outColor;
+        layout(set = 1, binding = 0) uniform paletteVals {
+            mat4 colours[4];
+        } palette;
 
-        mat4x3 palette[4] = mat4x3[4](
-            mat4x3( // red
-                vec3(1.0, 0.0, 0.0),
-                vec3(0.8, 0.4, 0.1),
-                vec3(1.0, 1.0, 0.0),
-                vec3(0.8, 0.2, 0.0)
-            ),
-            mat4x3( // green
-                vec3(0.0, 1.0, 0.0),
-                vec3(0.0, 0.8, 0.8),
-                vec3(0.1, 0.9, 0.3),
-                vec3(0.5, 1.0, 0.1)
-            ),
-            mat4x3( // blue
-                vec3(0.0, 0.0, 1.0),
-                vec3(0.3, 0.3, 0.8),
-                vec3(0.7, 0.2, 0.9),
-                vec3(0.4, 0.0, 0.9)
-            ),
-            mat4x3( // b/w
-                vec3(1.0, 1.0, 1.0),
-                vec3(0.6, 0.6, 0.6),
-                vec3(0.3, 0.3, 0.3),
-                vec3(0.0, 0.0, 0.0)
-            )
-        );
+        layout(location = 0) out vec4 outColor;
 
         void main() {
             uint texel = texture(atlas, texCoord).x;
-            vec3 pixel = palette[paletteIndex][texel];
-            outColor = vec4(pixel, 1.0);
+            outColor = palette.colours[paletteIndex][texel];
         }"#
     }
 }
@@ -282,6 +270,7 @@ fn main() {
         .build(device.clone())
         .unwrap());
 
+
     // Future foor previous frame completion.
     let mut previous_frame_future = Box::new(now(device.clone())) as Box<GpuFuture>;
 
@@ -296,18 +285,60 @@ fn main() {
         let vertex_buffer = vertex_buffer_pool.chunk(vertex_grid.vertices.iter().cloned()).unwrap();
 
         // Make image with current texture.
+        // TODO: only re-create the image when the data has changed.
         let (image, write_future) = texture_atlas.make_image(queue.clone());
 
+        // Make palette buffer.
+        // TODO: only recreate buffer when the data has changed.
+        let (palette_buffer, palette_future) = ImmutableBuffer::from_data(
+            PaletteUniformBufferObject{
+                _colours: [
+                    Matrix4::from_cols(
+                        Vector4::new(1.0, 0.0, 0.0, 1.0),
+                        Vector4::new(0.8, 0.4, 0.1, 1.0),
+                        Vector4::new(1.0, 1.0, 0.0, 1.0),
+                        Vector4::new(0.8, 0.2, 0.0, 1.0)
+                    ),
+                    Matrix4::from_cols(
+                        Vector4::new(0.0, 1.0, 0.0, 1.0),
+                        Vector4::new(0.0, 0.8, 0.8, 1.0),
+                        Vector4::new(0.1, 0.9, 0.3, 1.0),
+                        Vector4::new(0.5, 1.0, 0.1, 1.0)
+                    ),
+                    Matrix4::from_cols(
+                        Vector4::new(0.0, 0.0, 1.0, 1.0),
+                        Vector4::new(0.3, 0.3, 0.8, 1.0),
+                        Vector4::new(0.7, 0.2, 0.9, 1.0),
+                        Vector4::new(0.4, 0.0, 0.9, 1.0)
+                    ),
+                    Matrix4::from_cols(
+                        Vector4::new(1.0, 1.0, 1.0, 1.0),
+                        Vector4::new(0.6, 0.6, 0.6, 1.0),
+                        Vector4::new(0.3, 0.3, 0.3, 1.0),
+                        Vector4::new(0.0, 0.0, 0.0, 1.0)
+                    )
+                ]
+            },
+            BufferUsage::uniform_buffer(),
+            queue.clone()
+        ).expect("Couldn't create palette buffer.");
+
         // Make descriptor set to bind texture atlas.
-        let set = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
+        let set0 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
             .add_sampled_image(image.clone(), sampler.clone()).unwrap()
+            .build().unwrap()
+        );
+
+        // Make descriptor set for palettes (since they will stay constant).
+        let set1 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 1)
+            .add_buffer(palette_buffer.clone()).unwrap()
             .build().unwrap()
         );
         
         // Make and submit command buffer using pipeline and current framebuffer.
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue_family).unwrap()
-            .begin_render_pass(framebuffers[image_num].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
-            .draw(pipeline.clone(), &dynamic_state, vertex_buffer, set, ()).unwrap()
+            .begin_render_pass(framebuffers[image_num].clone(), false, vec![[1.0, 1.0, 1.0, 1.0].into()]).unwrap()
+            .draw(pipeline.clone(), &dynamic_state, vertex_buffer, (set0, set1), ()).unwrap()
             .end_render_pass().unwrap()
             .build().unwrap();
 
@@ -315,9 +346,13 @@ fn main() {
         let mut now_future = Box::new(now(device.clone())) as Box<GpuFuture>;
         std::mem::swap(&mut previous_frame_future, &mut now_future);
 
-        // Wait until previous frame is done, _and_ the framebuffer has been acquired, _and_ the texture has been uploaded.
+        // Wait until previous frame is done,
+        // _and_ the framebuffer has been acquired,
+        // _and_ the texture has been uploaded,
+        // _and_ the palettes have been uploaded.
         let future = now_future.join(acquire_future)
             .join(write_future)
+            .join(palette_future)
             .then_execute(queue.clone(), command_buffer).unwrap()                   // Run the commands (pipeline and render)
             .then_swapchain_present(queue.clone(), swapchain.clone(), image_num)    // Present newly rendered image.
             .then_signal_fence_and_flush();                                         // Signal done and flush the pipeline.
