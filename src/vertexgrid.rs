@@ -1,19 +1,32 @@
 use super::Vertex;
 
-// Struct that contains the vertices to be used for rendering.
+use vulkano::{
+    buffer::CpuBufferPool,
+    buffer::cpu_pool::CpuBufferPoolChunk,
+    device::Device,
+    memory::pool::StdMemoryPool
+};
+
+use std::sync::Arc;
+
+// Struct that contains the vertices to be used for rendering, in addition to the buffer pool and cached buffer chunk for rendering.
 pub struct VertexGrid {
-    pub vertices: Vec<Vertex>,
+    vertices: Vec<Vertex>,
     row_len: usize,
-    atlas_size: f32
+    atlas_size: f32,
+    buffer_pool: CpuBufferPool<Vertex>,
+    current_buffer: Option<CpuBufferPoolChunk<Vertex, Arc<StdMemoryPool>>>
 }
 
 impl VertexGrid {
     // Make a new 2D Vertex Grid of size (x_size * y_size). Also input atlas size (square).
-    pub fn new(x_size: usize, y_size: usize, atlas_size: usize) -> Self {
+    pub fn new(device: &Arc<Device>, x_size: usize, y_size: usize, atlas_size: usize) -> Self {
         let mut grid = VertexGrid {
             vertices: Vec::new(),
             row_len: x_size,
-            atlas_size: atlas_size as f32
+            atlas_size: atlas_size as f32,
+            buffer_pool: CpuBufferPool::vertex_buffer(device.clone()),
+            current_buffer: None
         };
 
         if (x_size > 0) && (y_size > 0) {
@@ -58,6 +71,9 @@ impl VertexGrid {
         self.vertices[index + 3].tex_coord =    [top_left.0, bottom_right.1];
         self.vertices[index + 4].tex_coord =    [bottom_right.0, top_left.1];
         self.vertices[index + 5].tex_coord =    [bottom_right.0, bottom_right.1];
+
+        // Invalidate buffer chunk.
+        self.current_buffer = None;
     }
 
     // Sets the palette for a tile.
@@ -71,5 +87,19 @@ impl VertexGrid {
         self.vertices[index + 3].palette_index = palette_index;
         self.vertices[index + 4].palette_index = palette_index;
         self.vertices[index + 5].palette_index = palette_index;
+
+        // Invalidate buffer chunk.
+        self.current_buffer = None;
+    }
+
+    // Makes a new vertex buffer if the data has changed. Else, retrieves the current one.
+    pub fn get_vertex_buffer(&mut self) -> CpuBufferPoolChunk<Vertex, Arc<StdMemoryPool>> {
+        if let Some(buf) = &self.current_buffer {
+            buf.clone()
+        } else {
+            let b = self.buffer_pool.chunk(self.vertices.iter().cloned()).unwrap();
+            self.current_buffer = Some(b.clone());
+            b
+        }
     }
 }

@@ -171,7 +171,7 @@ fn main() {
     // Make vertices (4 squares.)
     let mut vertex_grid = {
         // Triangle list with grid of 16 squares (4x4), with atlas size 2x2.
-        let mut vertex_grid = vertexgrid::VertexGrid::new(4, 4, ATLAS_SIZE);
+        let mut vertex_grid = vertexgrid::VertexGrid::new(&device, 4, 4, ATLAS_SIZE);
 
         // Pick a random tex and palette combo for each tile.
         for y in 0..4 {
@@ -183,9 +183,6 @@ fn main() {
 
         vertex_grid
     };
-
-    // Make buffer pool for uploading vertices.
-    let vertex_buffer_pool = CpuBufferPool::vertex_buffer(device.clone());
 
     // Make texture atlas.
     // 2x2 textures, textures of size 8x8, texel of size 2 bits.
@@ -289,9 +286,8 @@ fn main() {
             .expect("Didn't get next image");
 
         // Make vertex buffer with current tex coords.
-        // TODO: only re-create the buffer when the data has changed.
         // TODO: investigate reducing data copies.
-        let vertex_buffer = vertex_buffer_pool.chunk(vertex_grid.vertices.iter().cloned()).unwrap();
+        let vertex_buffer = vertex_grid.get_vertex_buffer();
 
         // Make image with current texture.
         // TODO: only re-create the image when the data has changed.
