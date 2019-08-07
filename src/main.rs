@@ -53,7 +53,8 @@ const ATLAS_SIZE: usize = 2;    // In tiles
 #[derive(Default, Copy, Clone)]
 pub struct Vertex {
     position: [f32; 2],
-    tex_coord: [f32; 2]
+    tex_coord: [f32; 2],
+    palette_index: u32
 }
 
 mod vs {
@@ -64,15 +65,15 @@ mod vs {
 
         layout(location = 0) in vec2 position;
         layout(location = 1) in vec2 tex_coord;
-        //layout(location = 2) in int paletteIndex;
+        layout(location = 2) in uint palette_index;
 
         layout(location = 0) out vec2 texCoordOut;
-        //layout(location = 1) out int paletteIndexOut;
+        layout(location = 1) out uint paletteIndexOut;
 
         void main() {
             gl_Position = vec4(position, 0.0, 1.0);
             texCoordOut = tex_coord;
-            //paletteIndexOut = paletteIndex;
+            paletteIndexOut = palette_index;
         }"#
     }
 }
@@ -84,28 +85,48 @@ mod fs {
         #version 450
 
         layout(location = 0) in vec2 texCoord;
-        //layout(location = 1) in int paletteIndex;
+        layout(location = 1) flat in uint paletteIndex;
 
         layout(set = 0, binding = 0) uniform usampler2D atlas;
 
         layout(location = 0) out vec4 outColor;
 
-        vec3 palette[4] = vec3[4](
-            vec3(0.5, 0.5, 0.0),
-            vec3(0.8, 0.1, 0.8),
-            vec3(0.0, 0.8, 0.6),
-            vec3(1.0, 0.0, 0.0)
+        mat4x3 palette[4] = mat4x3[4](
+            mat4x3( // red
+                vec3(1.0, 0.0, 0.0),
+                vec3(0.8, 0.4, 0.1),
+                vec3(1.0, 1.0, 0.0),
+                vec3(0.8, 0.2, 0.0)
+            ),
+            mat4x3( // green
+                vec3(0.0, 1.0, 0.0),
+                vec3(0.0, 0.8, 0.8),
+                vec3(0.1, 0.9, 0.3),
+                vec3(0.5, 1.0, 0.1)
+            ),
+            mat4x3( // blue
+                vec3(0.0, 0.0, 1.0),
+                vec3(0.3, 0.3, 0.8),
+                vec3(0.7, 0.2, 0.9),
+                vec3(0.4, 0.0, 0.9)
+            ),
+            mat4x3( // b/w
+                vec3(1.0, 1.0, 1.0),
+                vec3(0.6, 0.6, 0.6),
+                vec3(0.3, 0.3, 0.3),
+                vec3(0.0, 0.0, 0.0)
+            )
         );
 
         void main() {
             uint texel = texture(atlas, texCoord).x;
-            vec3 pixel = palette[texel];
-            outColor = vec4(pixel, 0.0);
+            vec3 pixel = palette[paletteIndex][texel];
+            outColor = vec4(pixel, 1.0);
         }"#
     }
 }
 
-vulkano::impl_vertex!(Vertex, position, tex_coord);
+vulkano::impl_vertex!(Vertex, position, tex_coord, palette_index);
 
 fn main() {
     // Make instance with window extensions.
@@ -161,25 +182,14 @@ fn main() {
         // Triangle list with grid of 16 squares (4x4), with atlas size 2x2.
         let mut vertex_grid = vertexgrid::VertexGrid::new(4, 4, ATLAS_SIZE);
 
-        vertex_grid.set_tile_texture(0, 0, 0, 0);   // Set tile at 0,0 to texture at 0,0
-        vertex_grid.set_tile_texture(1, 0, 1, 1);   // Set tile at 1,0 to texture at 1,1
-        vertex_grid.set_tile_texture(2, 0, 0, 0);   // and so on...
-        vertex_grid.set_tile_texture(3, 0, 0, 0);
-        vertex_grid.set_tile_texture(0, 1, 0, 0);
-        vertex_grid.set_tile_texture(1, 1, 0, 0);
-        vertex_grid.set_tile_texture(2, 1, 0, 0);
-        vertex_grid.set_tile_texture(3, 1, 0, 0);
-        vertex_grid.set_tile_texture(0, 2, 0, 0);
-        vertex_grid.set_tile_texture(1, 2, 0, 0);
-        vertex_grid.set_tile_texture(2, 2, 0, 0);
-        vertex_grid.set_tile_texture(3, 2, 0, 0);
-        vertex_grid.set_tile_texture(0, 3, 0, 0);
-        vertex_grid.set_tile_texture(1, 3, 0, 0);
-        vertex_grid.set_tile_texture(2, 3, 0, 0);
-        vertex_grid.set_tile_texture(3, 3, 0, 0);
+        // Pick a random tex and palette combo for each tile.
+        for y in 0..4 {
+            for x in 0..4 {
+                vertex_grid.set_tile_texture(x, y, rand::random::<usize>() & 1, rand::random::<usize>() & 1);
+                vertex_grid.set_tile_palette(x, y, rand::random::<u32>() & 0b11);
+            }
+        }
 
-        /*CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(),
-            vertex_grid.get_vertices().into_iter()).unwrap()*/
         vertex_grid
     };
 

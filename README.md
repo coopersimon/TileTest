@@ -25,3 +25,8 @@ z x c v
 After selecting a tile, the palette can be chosen with one of `t, y, u, i`. Or, the tile texture can be swapped out with `g, h, j, k`.
 
 To generate a new tile texture for the corresponding slot, first type the texture you want to swap out (`g, h, j, k`), then press `enter` to generate a new texture and replace the old one.
+
+### TODO:
+- Add input.
+- Send palettes via CPU.
+- Allow palette switching.

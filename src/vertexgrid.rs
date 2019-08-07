@@ -26,12 +26,12 @@ impl VertexGrid {
                 let mut lo_x = -1.0;
                 let mut hi_x = lo_x + x_frac;
                 for _ in 0..x_size {
-                    grid.vertices.push(Vertex{ position: [lo_x, lo_y], tex_coord: [0.0, 0.0] });
-                    grid.vertices.push(Vertex{ position: [lo_x, hi_y], tex_coord: [0.0, 1.0] });
-                    grid.vertices.push(Vertex{ position: [hi_x, lo_y], tex_coord: [1.0, 0.0] });
-                    grid.vertices.push(Vertex{ position: [lo_x, hi_y], tex_coord: [0.0, 1.0] });
-                    grid.vertices.push(Vertex{ position: [hi_x, lo_y], tex_coord: [1.0, 0.0] });
-                    grid.vertices.push(Vertex{ position: [hi_x, hi_y], tex_coord: [1.0, 1.0] });
+                    grid.vertices.push(Vertex{ position: [lo_x, lo_y], tex_coord: [0.0, 0.0], palette_index: 0 });
+                    grid.vertices.push(Vertex{ position: [lo_x, hi_y], tex_coord: [0.0, 1.0], palette_index: 0 });
+                    grid.vertices.push(Vertex{ position: [hi_x, lo_y], tex_coord: [1.0, 0.0], palette_index: 0 });
+                    grid.vertices.push(Vertex{ position: [lo_x, hi_y], tex_coord: [0.0, 1.0], palette_index: 0 });
+                    grid.vertices.push(Vertex{ position: [hi_x, lo_y], tex_coord: [1.0, 0.0], palette_index: 0 });
+                    grid.vertices.push(Vertex{ position: [hi_x, hi_y], tex_coord: [1.0, 1.0], palette_index: 0 });
 
                     lo_x = hi_x;
                     hi_x += x_frac;
@@ -58,6 +58,19 @@ impl VertexGrid {
         self.vertices[index + 3].tex_coord =    [top_left.0, bottom_right.1];
         self.vertices[index + 4].tex_coord =    [bottom_right.0, top_left.1];
         self.vertices[index + 5].tex_coord =    [bottom_right.0, bottom_right.1];
+    }
+
+    // Sets the palette for a tile.
+    pub fn set_tile_palette(&mut self, tile_x: usize, tile_y: usize, palette_index: u32) {
+        let y_offset = tile_y * self.row_len * 6;
+        let index = y_offset + (tile_x * 6);
+
+        self.vertices[index].palette_index = palette_index;
+        self.vertices[index + 1].palette_index = palette_index;
+        self.vertices[index + 2].palette_index = palette_index;
+        self.vertices[index + 3].palette_index = palette_index;
+        self.vertices[index + 4].palette_index = palette_index;
+        self.vertices[index + 5].palette_index = palette_index;
     }
 
     pub fn get_vertices<'a>(&'a self) -> &'a [Vertex] {
