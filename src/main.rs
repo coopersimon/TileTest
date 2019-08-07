@@ -40,6 +40,9 @@ use winit::{
     EventsLoop,
     Event,
     WindowEvent,
+    DeviceEvent,
+    KeyboardInput,
+    ElementState,
     ControlFlow,
     WindowBuilder
 };
@@ -52,6 +55,7 @@ use cgmath::{
 use std::sync::Arc;
 
 mod imagegen;
+mod keystate;
 mod vertexgrid;
 
 const TILE_SIZE: usize = 8;     // In pixels
@@ -166,7 +170,7 @@ fn main() {
     };
 
     // Make vertices (4 squares.)
-    let vertex_grid = {
+    let mut vertex_grid = {
         // Triangle list with grid of 16 squares (4x4), with atlas size 2x2.
         let mut vertex_grid = vertexgrid::VertexGrid::new(4, 4, ATLAS_SIZE);
 
@@ -186,7 +190,7 @@ fn main() {
 
     // Make texture atlas.
     // 2x2 textures, textures of size 8x8, texel of size 2 bits.
-    let texture_atlas = {
+    let mut texture_atlas = {
         let mut texture_atlas = imagegen::TextureAtlas::new(ATLAS_SIZE, TILE_SIZE);
 
         texture_atlas.generate_tile_tex(0, 0);
@@ -277,6 +281,9 @@ fn main() {
     // Future foor previous frame completion.
     let mut previous_frame_future = Box::new(now(device.clone())) as Box<GpuFuture>;
 
+    // Initial command state.
+    let mut state = keystate::KeyState::new();
+
     events_loop.run_forever(|event| {
         // Get current framebuffer index from the swapchain.
         let (image_num, acquire_future) = acquire_next_image(swapchain.clone(), None)
@@ -366,6 +373,27 @@ fn main() {
         match event {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 ControlFlow::Break
+            },
+            Event::WindowEvent {
+                // Handle keyboard input.
+                event: WindowEvent::KeyboardInput{
+                    input: KeyboardInput{
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(k),
+                        .. },
+                    .. },
+                .. } => {
+                let (new_state, command) = state.process_key(k);
+                state = new_state;
+                if let Some(c) = command {
+                    use keystate::Command::*;
+                    match c {
+                        ModifyTilePalette{ palette: p, x, y }   => vertex_grid.set_tile_palette(x, y, p),
+                        ModifyTileTexture{ tex_x, tex_y, x, y } => vertex_grid.set_tile_texture(x, y, tex_x, tex_y),
+                        GenerateTexture{ tex_x: x, tex_y: y }   => texture_atlas.generate_tile_tex(x, y)
+                    }
+                }
+                ControlFlow::Continue
             },
             _ => ControlFlow::Continue,
         }
