@@ -6,7 +6,7 @@ use vulkano::{
         Device, DeviceExtensions
     },
     buffer::{
-        BufferUsage, CpuBufferPool
+        CpuBufferPool
     },
     framebuffer::{
         Framebuffer, Subpass, FramebufferAbstract
@@ -16,6 +16,12 @@ use vulkano::{
     },
     command_buffer::{
         AutoCommandBufferBuilder, DynamicState
+    },
+    sampler::{
+        Filter,
+        MipmapMode,
+        Sampler,
+        SamplerAddressMode
     },
     swapchain::{
         Swapchain, SurfaceTransform, PresentMode, acquire_next_image
@@ -80,18 +86,21 @@ mod fs {
         layout(location = 0) in vec2 texCoord;
         //layout(location = 1) in int paletteIndex;
 
-        layout(set = 0, binding = 0) buffer Data {
-            uint data[];
-        } atlas;
+        layout(set = 0, binding = 0) uniform usampler2D atlas;
 
         layout(location = 0) out vec4 outColor;
 
+        vec3 palette[4] = vec3[4](
+            vec3(0.5, 0.5, 0.0),
+            vec3(0.8, 0.1, 0.8),
+            vec3(0.0, 0.8, 0.6),
+            vec3(1.0, 0.0, 0.0)
+        );
+
         void main() {
-            //int texel = texture(texSampler, texCoord);
-            //float pixel = palette[texel];
-            //outColor = vec4(vec3(pixel), 1.0);
-            uint data = atlas.data[0];
-            outColor = vec4(texCoord.x, texCoord.y, 0.0, 0.0);
+            uint texel = texture(atlas, texCoord).x;
+            vec3 pixel = palette[texel];
+            outColor = vec4(pixel, 0.0);
         }"#
     }
 }
@@ -154,6 +163,20 @@ fn main() {
 
         vertex_grid.set_tile_texture(0, 0, 0, 0);   // Set tile at 0,0 to texture at 0,0
         vertex_grid.set_tile_texture(1, 0, 1, 1);   // Set tile at 1,0 to texture at 1,1
+        vertex_grid.set_tile_texture(2, 0, 0, 0);   // and so on...
+        vertex_grid.set_tile_texture(3, 0, 0, 0);
+        vertex_grid.set_tile_texture(0, 1, 0, 0);
+        vertex_grid.set_tile_texture(1, 1, 0, 0);
+        vertex_grid.set_tile_texture(2, 1, 0, 0);
+        vertex_grid.set_tile_texture(3, 1, 0, 0);
+        vertex_grid.set_tile_texture(0, 2, 0, 0);
+        vertex_grid.set_tile_texture(1, 2, 0, 0);
+        vertex_grid.set_tile_texture(2, 2, 0, 0);
+        vertex_grid.set_tile_texture(3, 2, 0, 0);
+        vertex_grid.set_tile_texture(0, 3, 0, 0);
+        vertex_grid.set_tile_texture(1, 3, 0, 0);
+        vertex_grid.set_tile_texture(2, 3, 0, 0);
+        vertex_grid.set_tile_texture(3, 3, 0, 0);
 
         /*CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(),
             vertex_grid.get_vertices().into_iter()).unwrap()*/
@@ -166,7 +189,7 @@ fn main() {
     // Make texture atlas.
     // 2x2 textures, textures of size 8x8, texel of size 2 bits.
     let texture_atlas = {
-        let mut texture_atlas = imagegen::TextureAtlas::new(ATLAS_SIZE, TILE_SIZE, 2);
+        let mut texture_atlas = imagegen::TextureAtlas::new(ATLAS_SIZE, TILE_SIZE);
 
         texture_atlas.generate_tile_tex(0, 0);
         texture_atlas.generate_tile_tex(1, 0);
@@ -176,8 +199,17 @@ fn main() {
         texture_atlas
     };
 
-    // Make buffer pool for texture atlas.
-    let texture_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::all());
+    // Make sampler for texture.
+    let sampler = Sampler::new(
+        device.clone(),
+        Filter::Nearest,
+        Filter::Nearest,
+        MipmapMode::Nearest,
+        SamplerAddressMode::Repeat,
+        SamplerAddressMode::Repeat,
+        SamplerAddressMode::Repeat,
+        0.0, 1.0, 0.0, 0.0
+    ).expect("Couldn't create sampler!");
 
     // Make the render pass to insert into the command queue.
     let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
@@ -253,18 +285,18 @@ fn main() {
         // TODO: investigate reducing data copies.
         let vertex_buffer = vertex_buffer_pool.chunk(vertex_grid.vertices.iter().cloned()).unwrap();
 
-        // Make buffer with current texture.
-        let texture_buffer = texture_buffer_pool.chunk(texture_atlas.textures.iter().cloned()).unwrap();
+        // Make image with current texture.
+        let (image, write_future) = texture_atlas.make_image(queue.clone());
 
         // Make descriptor set to bind texture atlas.
         let set = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
-            .add_buffer(texture_buffer).unwrap()
+            .add_sampled_image(image.clone(), sampler.clone()).unwrap()
             .build().unwrap()
         );
         
         // Make and submit command buffer using pipeline and current framebuffer.
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue_family).unwrap()
-            .begin_render_pass(framebuffers[image_num].clone(), false, vec![[0.0, 0.0, 1.0, 1.0].into()]).unwrap()
+            .begin_render_pass(framebuffers[image_num].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
             .draw(pipeline.clone(), &dynamic_state, vertex_buffer, set, ()).unwrap()
             .end_render_pass().unwrap()
             .build().unwrap();
@@ -273,8 +305,9 @@ fn main() {
         let mut now_future = Box::new(now(device.clone())) as Box<GpuFuture>;
         std::mem::swap(&mut previous_frame_future, &mut now_future);
 
-        // Wait until previous frame is done _and_ the framebuffer has been acquired.
+        // Wait until previous frame is done, _and_ the framebuffer has been acquired, _and_ the texture has been uploaded.
         let future = now_future.join(acquire_future)
+            .join(write_future)
             .then_execute(queue.clone(), command_buffer).unwrap()                   // Run the commands (pipeline and render)
             .then_swapchain_present(queue.clone(), swapchain.clone(), image_num)    // Present newly rendered image.
             .then_signal_fence_and_flush();                                         // Signal done and flush the pipeline.
