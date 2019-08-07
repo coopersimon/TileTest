@@ -28,5 +28,4 @@ To generate a new tile texture for the corresponding slot, first type the textur
 
 ### TODO:
 - Add input.
-- Send palettes via CPU.
 - Allow palette switching.

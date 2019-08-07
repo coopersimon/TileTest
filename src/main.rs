@@ -31,7 +31,7 @@ use vulkano::{
     sync::{
         now, GpuFuture
     },
-    descriptor::descriptor_set::PersistentDescriptorSet
+    descriptor::descriptor_set::FixedSizeDescriptorSetsPool
 };
 
 use vulkano_win::VkSurfaceBuild;
@@ -270,6 +270,9 @@ fn main() {
         .build(device.clone())
         .unwrap());
 
+    // Make descriptor set pools.
+    let mut set_0_pool = FixedSizeDescriptorSetsPool::new(pipeline.clone(), 0);
+    let mut set_1_pool = FixedSizeDescriptorSetsPool::new(pipeline.clone(), 1);
 
     // Future foor previous frame completion.
     let mut previous_frame_future = Box::new(now(device.clone())) as Box<GpuFuture>;
@@ -324,16 +327,14 @@ fn main() {
         ).expect("Couldn't create palette buffer.");
 
         // Make descriptor set to bind texture atlas.
-        let set0 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
+        let set0 = set_0_pool.next()
             .add_sampled_image(image.clone(), sampler.clone()).unwrap()
-            .build().unwrap()
-        );
+            .build().unwrap();
 
-        // Make descriptor set for palettes (since they will stay constant).
-        let set1 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 1)
+        // Make descriptor set for palettes.
+        let set1 = set_1_pool.next()
             .add_buffer(palette_buffer.clone()).unwrap()
-            .build().unwrap()
-        );
+            .build().unwrap();
         
         // Make and submit command buffer using pipeline and current framebuffer.
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue_family).unwrap()
