@@ -40,7 +40,6 @@ use winit::{
     EventsLoop,
     Event,
     WindowEvent,
-    DeviceEvent,
     KeyboardInput,
     ElementState,
     ControlFlow,

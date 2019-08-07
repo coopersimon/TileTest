@@ -72,8 +72,4 @@ impl VertexGrid {
         self.vertices[index + 4].palette_index = palette_index;
         self.vertices[index + 5].palette_index = palette_index;
     }
-
-    pub fn get_vertices<'a>(&'a self) -> &'a [Vertex] {
-        &self.vertices
-    }
 }
