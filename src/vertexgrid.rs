@@ -81,12 +81,12 @@ impl VertexGrid {
         let y_offset = tile_y * self.row_len * 6;
         let index = y_offset + (tile_x * 6);
 
-        self.vertices[index].palette_index = palette_index;
-        self.vertices[index + 1].palette_index = palette_index;
-        self.vertices[index + 2].palette_index = palette_index;
-        self.vertices[index + 3].palette_index = palette_index;
-        self.vertices[index + 4].palette_index = palette_index;
-        self.vertices[index + 5].palette_index = palette_index;
+        self.vertices[index].palette_index =        palette_index;
+        self.vertices[index + 1].palette_index =    palette_index;
+        self.vertices[index + 2].palette_index =    palette_index;
+        self.vertices[index + 3].palette_index =    palette_index;
+        self.vertices[index + 4].palette_index =    palette_index;
+        self.vertices[index + 5].palette_index =    palette_index;
 
         // Invalidate buffer chunk.
         self.current_buffer = None;

@@ -7,7 +7,6 @@ use vulkano::{
     },
     buffer::{
         BufferUsage,
-        CpuBufferPool,
         immutable::ImmutableBuffer
     },
     framebuffer::{
@@ -158,7 +157,7 @@ fn main() {
     let (swapchain, images) = {
         let caps = surface.capabilities(physical)
             .expect("Failed to get surface capabilities");
-        let dimensions = caps.current_extent.unwrap_or([1280, 1024]);
+        let dimensions = caps.current_extent.unwrap_or([512, 512]);
         let alpha = caps.supported_composite_alpha.iter().next().unwrap();
         let format = caps.supported_formats[0].0;
 
@@ -183,6 +182,42 @@ fn main() {
 
         vertex_grid
     };
+
+
+    // Make palette buffer.
+    // TODO: only recreate buffer when the data has changed.
+    let (palette_buffer, palette_future) = ImmutableBuffer::from_data(
+        PaletteUniformBufferObject{
+            _colours: [
+                Matrix4::from_cols(
+                    Vector4::new(1.0, 0.0, 0.0, 1.0),
+                    Vector4::new(0.8, 0.4, 0.1, 1.0),
+                    Vector4::new(1.0, 1.0, 0.0, 1.0),
+                    Vector4::new(0.8, 0.2, 0.0, 1.0)
+                ),
+                Matrix4::from_cols(
+                    Vector4::new(0.0, 1.0, 0.0, 1.0),
+                    Vector4::new(0.0, 0.8, 0.8, 1.0),
+                    Vector4::new(0.1, 0.9, 0.3, 1.0),
+                    Vector4::new(0.5, 1.0, 0.1, 1.0)
+                ),
+                Matrix4::from_cols(
+                    Vector4::new(0.0, 0.0, 1.0, 1.0),
+                    Vector4::new(0.3, 0.3, 0.8, 1.0),
+                    Vector4::new(0.7, 0.2, 0.9, 1.0),
+                    Vector4::new(0.4, 0.0, 0.9, 1.0)
+                ),
+                Matrix4::from_cols(
+                    Vector4::new(1.0, 1.0, 1.0, 1.0),
+                    Vector4::new(0.6, 0.6, 0.6, 1.0),
+                    Vector4::new(0.3, 0.3, 0.3, 1.0),
+                    Vector4::new(0.0, 0.0, 0.0, 1.0)
+                )
+            ]
+        },
+        BufferUsage::uniform_buffer(),
+        queue.clone()
+    ).expect("Couldn't create palette buffer.");
 
     // Make texture atlas.
     // 2x2 textures, textures of size 8x8, texel of size 2 bits.
@@ -275,7 +310,7 @@ fn main() {
     let mut set_1_pool = FixedSizeDescriptorSetsPool::new(pipeline.clone(), 1);
 
     // Future foor previous frame completion.
-    let mut previous_frame_future = Box::new(now(device.clone())) as Box<GpuFuture>;
+    let mut previous_frame_future = Box::new(now(device.clone()).join(palette_future)) as Box<GpuFuture>;
 
     // Initial command state.
     let mut state = keystate::KeyState::new();
@@ -292,41 +327,6 @@ fn main() {
         // Make image with current texture.
         // TODO: only re-create the image when the data has changed.
         let (image, write_future) = texture_atlas.make_image(queue.clone());
-
-        // Make palette buffer.
-        // TODO: only recreate buffer when the data has changed.
-        let (palette_buffer, palette_future) = ImmutableBuffer::from_data(
-            PaletteUniformBufferObject{
-                _colours: [
-                    Matrix4::from_cols(
-                        Vector4::new(1.0, 0.0, 0.0, 1.0),
-                        Vector4::new(0.8, 0.4, 0.1, 1.0),
-                        Vector4::new(1.0, 1.0, 0.0, 1.0),
-                        Vector4::new(0.8, 0.2, 0.0, 1.0)
-                    ),
-                    Matrix4::from_cols(
-                        Vector4::new(0.0, 1.0, 0.0, 1.0),
-                        Vector4::new(0.0, 0.8, 0.8, 1.0),
-                        Vector4::new(0.1, 0.9, 0.3, 1.0),
-                        Vector4::new(0.5, 1.0, 0.1, 1.0)
-                    ),
-                    Matrix4::from_cols(
-                        Vector4::new(0.0, 0.0, 1.0, 1.0),
-                        Vector4::new(0.3, 0.3, 0.8, 1.0),
-                        Vector4::new(0.7, 0.2, 0.9, 1.0),
-                        Vector4::new(0.4, 0.0, 0.9, 1.0)
-                    ),
-                    Matrix4::from_cols(
-                        Vector4::new(1.0, 1.0, 1.0, 1.0),
-                        Vector4::new(0.6, 0.6, 0.6, 1.0),
-                        Vector4::new(0.3, 0.3, 0.3, 1.0),
-                        Vector4::new(0.0, 0.0, 0.0, 1.0)
-                    )
-                ]
-            },
-            BufferUsage::uniform_buffer(),
-            queue.clone()
-        ).expect("Couldn't create palette buffer.");
 
         // Make descriptor set to bind texture atlas.
         let set0 = set_0_pool.next()
@@ -355,7 +355,6 @@ fn main() {
         // _and_ the palettes have been uploaded.
         let future = now_future.join(acquire_future)
             .join(write_future)
-            .join(palette_future)
             .then_execute(queue.clone(), command_buffer).unwrap()                   // Run the commands (pipeline and render)
             .then_swapchain_present(queue.clone(), swapchain.clone(), image_num)    // Present newly rendered image.
             .then_signal_fence_and_flush();                                         // Signal done and flush the pipeline.
